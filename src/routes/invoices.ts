@@ -5,6 +5,7 @@ import {
   appointmentRepository,
   invoiceRepository,
   patientRepository,
+  userRepository,
 } from "../data/postgresStore";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { Invoice } from "../models/types";
@@ -13,15 +14,29 @@ const router = Router();
 router.use(requireAuth);
 
 router.get("/", async (_req, res) => {
-  const [invoices, patients] = await Promise.all([
+  const [invoices, patients, appointments, users] = await Promise.all([
     invoiceRepository.list(),
     patientRepository.list(),
+    appointmentRepository.list(),
+    userRepository.list(),
   ]);
   const patientMap = new Map(patients.map((p) => [p.id, p]));
-  const enriched = invoices.map((i) => ({
-    ...i,
-    patient: patientMap.get(i.patientId) || null,
-  }));
+  const appointmentMap = new Map(appointments.map((a) => [a.id, a]));
+  const userMap = new Map(users.map((u) => [u.id, u]));
+
+  const enriched = invoices.map((i) => {
+    const appointment = appointmentMap.get(i.appointmentId);
+    const doctor = appointment ? userMap.get(appointment.doctorId) : undefined;
+    const issuedByUser = userMap.get(i.issuedBy);
+    return {
+      ...i,
+      patient: patientMap.get(i.patientId) || null,
+      doctor: doctor ? { id: doctor.id, name: doctor.name, username: doctor.username } : null,
+      appointmentDate: appointment?.date ?? null,
+      appointmentReason: appointment?.reason ?? null,
+      issuedByName: issuedByUser?.name ?? null,
+    };
+  });
   res.json({ invoices: enriched });
 });
 
