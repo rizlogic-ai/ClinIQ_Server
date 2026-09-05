@@ -157,10 +157,9 @@ async function findPatientByPhone(phoneE164: string) {
   return candidates.rows.find((r) => normalizePhone(r.phone) === phoneE164);
 }
 
-// ── Everything below requires a signed-in patient ─────────────
-router.use(requireAuth, requireRole("patient"));
-
-// Clinics and their doctors, for the booking form.
+// Clinics and their doctors, for the booking form. Public: a clinic's name
+// and the doctors it advertises are not private, and the guest booking form
+// needs them before anyone has signed in.
 router.get("/clinics", async (_req, res) => {
   const [clinics, users] = await Promise.all([clinicRepository.list(), userRepository.list()]);
   const payload = clinics
@@ -177,6 +176,106 @@ router.get("/clinics", async (_req, res) => {
     .filter((c) => c.doctors.length > 0);
   res.json({ clinics: payload });
 });
+
+// ── Guest booking (no account) ────────────────────────────────
+// A stopgap until Twilio is live. Deliberately WRITE-ONLY: a guest never
+// receives a token, because anyone can type a stranger's number here and a
+// token would hand them that person's chart.
+const guestBookSchema = z.object({
+  name: z.string().trim().min(2),
+  phone: z.string().min(4),
+  doctorId: z.string().uuid(),
+  reason: z.string().trim().min(1),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  time: z.string().regex(/^\d{2}:\d{2}$/),
+});
+
+const GUEST_DAILY_LIMIT = 3;
+
+router.post("/guest-appointments", async (req, res) => {
+  const parsed = guestBookSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Please fill in every field" });
+  }
+  const { name, doctorId, reason, date, time } = parsed.data;
+  const phone = normalizePhone(parsed.data.phone);
+  if (!phone) {
+    return res.status(400).json({ error: "That doesn't look like a valid mobile number" });
+  }
+
+  const doctor = await userRepository.findById(doctorId);
+  if (!doctor || doctor.role !== "doctor" || !doctor.isActive) {
+    return res.status(400).json({ error: "That doctor is not available" });
+  }
+  const clinic = await clinicRepository.findById(doctor.clinicId);
+  if (clinic && !clinic.isActive) {
+    return res.status(400).json({ error: "That clinic is not accepting bookings" });
+  }
+  if (new Date(`${date}T${time}`).getTime() < Date.now()) {
+    return res.status(400).json({ error: "Pick a date and time in the future" });
+  }
+
+  // Without verification the only spam brake is a per-number daily cap.
+  const { rows: recent } = await pool.query(
+    `SELECT count(*)::int AS n
+     FROM cliniq.appointments a
+     JOIN cliniq.patients p ON p.id = a.patient_id
+     WHERE p.phone_e164 = $1
+       AND a.booked_by_patient = true
+       AND a.created_at > now() - interval '24 hours'`,
+    [phone]
+  );
+  if (recent[0].n >= GUEST_DAILY_LIMIT) {
+    return res.status(429).json({
+      error: "You've reached today's booking limit. Please call the clinic instead.",
+    });
+  }
+
+  // Reuse the chart when the number is already on file; never flip
+  // phone_verified, since nothing here proves the number belongs to them.
+  let patient = await findPatientByPhone(phone);
+  if (!patient) {
+    const inserted = await pool.query(
+      `INSERT INTO cliniq.patients (id, name, phone, phone_e164, phone_verified)
+       VALUES ($1, $2, $3, $3, false)
+       RETURNING id, name`,
+      [randomUUID(), name, phone]
+    );
+    patient = inserted.rows[0];
+  }
+
+  const now = new Date().toISOString();
+  const appointment = await appointmentRepository.create({
+    id: randomUUID(),
+    patientId: patient!.id,
+    doctorId,
+    reason,
+    date,
+    time,
+    status: "pending",
+    createdBy: patient!.id,
+    bookedByPatient: true,
+    createdAt: now,
+    updatedAt: now,
+    services: [],
+    history: [
+      { timestamp: now, actorId: patient!.id, action: "booked", detail: "Booked by guest (unverified number)" },
+    ],
+  });
+
+  await appointmentRequestedToPatient(appointment.id);
+
+  // Nothing about the patient's record comes back — just enough to confirm.
+  res.status(201).json({
+    booked: true,
+    appointment: { date: appointment.date, time: appointment.time, reason: appointment.reason },
+    doctor: { name: doctor.name },
+    clinic: clinic ? { name: clinic.name } : null,
+  });
+});
+
+// ── Everything below requires a signed-in patient ─────────────
+router.use(requireAuth, requireRole("patient"));
 
 router.get("/appointments", async (req, res) => {
   const all = await appointmentRepository.list();
