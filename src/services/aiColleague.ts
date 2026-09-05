@@ -79,26 +79,50 @@ async function askOpenAI(turns: ChatTurn[]): Promise<ColleagueReply> {
   }
 
   const base = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+  const messages = [{ role: "system", content: SYSTEM_PROMPT }, ...turns];
+
+  // Newer models take max_completion_tokens; older ones only understand
+  // max_tokens. Try the current spelling, fall back on the model's complaint
+  // rather than keeping a list of model names in sync.
+  let result = await callOpenAI(base, key, messages, "max_completion_tokens");
+  if (!result.ok && mentionsUnsupportedTokenParam(result.error, "max_completion_tokens")) {
+    result = await callOpenAI(base, key, messages, "max_tokens");
+  }
+
+  if (!result.ok) {
+    // Configuration problems are for the operator, not the doctor.
+    console.error(`AI colleague provider error (${result.status}):`, result.error);
+    throw new ColleagueError(providerMessage(result.status, result.error), result.status === 429 ? 429 : 502);
+  }
+  if (!result.text) throw new ColleagueError("The AI colleague returned an empty answer.");
+  return { text: result.text, model: OPENAI_MODEL };
+}
+
+async function callOpenAI(
+  base: string,
+  key: string,
+  messages: { role: string; content: string }[],
+  tokenParam: "max_tokens" | "max_completion_tokens"
+) {
   const res = await fetch(`${base}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: OPENAI_MODEL,
-      max_tokens: MAX_TOKENS,
-      messages: [{ role: "system", content: SYSTEM_PROMPT }, ...turns],
-    }),
+    body: JSON.stringify({ model: OPENAI_MODEL, [tokenParam]: MAX_TOKENS, messages }),
   });
-
   const payload = (await res.json().catch(() => ({}))) as {
     choices?: { message?: { content?: string } }[];
     error?: { message?: string };
   };
-  if (!res.ok) {
-    throw new ColleagueError(providerMessage(res.status, payload.error?.message), res.status === 429 ? 429 : 502);
-  }
-  const text = payload.choices?.[0]?.message?.content?.trim();
-  if (!text) throw new ColleagueError("The AI colleague returned an empty answer.");
-  return { text, model: OPENAI_MODEL };
+  return {
+    ok: res.ok,
+    status: res.status,
+    error: payload.error?.message,
+    text: payload.choices?.[0]?.message?.content?.trim(),
+  };
+}
+
+function mentionsUnsupportedTokenParam(error: string | undefined, param: string) {
+  return Boolean(error && /unsupported parameter/i.test(error) && error.includes(param));
 }
 
 // Reserved for the advanced subscription tier; unused until ANTHROPIC_API_KEY
@@ -138,9 +162,11 @@ async function askAnthropic(turns: ChatTurn[]): Promise<ColleagueReply> {
 
 // The provider's own wording can leak keys or billing detail, so map to
 // something a doctor can act on.
-function providerMessage(status: number, raw?: string): string {
+function providerMessage(status: number, _raw?: string): string {
   if (status === 429) return "The AI colleague is busy right now — try again in a moment.";
   if (status === 401 || status === 403) return "The AI colleague's credentials were rejected. Ask your administrator to check the API key.";
   if (status >= 500) return "The AI provider is having trouble. Try again shortly.";
-  return raw ? `The AI colleague could not answer: ${raw}` : "The AI colleague could not answer that.";
+  // A 4xx here is almost always a misconfigured model or parameter. The detail
+  // is in the server log; a doctor mid-clinic can only act on "tell your admin".
+  return "The AI colleague is misconfigured and couldn't answer. Ask your administrator to check the model setting.";
 }
