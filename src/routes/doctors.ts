@@ -1,10 +1,10 @@
-import { Router } from "express";
+import { safeRouter } from "../utils/safeRouter";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { doctorAssistantRepository, userRepository } from "../data/postgresStore";
 import { requireAuth, requireRole } from "../middleware/auth";
 
-const router = Router();
+const router = safeRouter();
 router.use(requireAuth, requireRole("doctor", "assistant"));
 
 // Assistant: list the doctors they're assigned to (for picking one when booking)

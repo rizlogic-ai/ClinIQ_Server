@@ -1,11 +1,11 @@
-import { Router } from "express";
+import { safeRouter } from "../utils/safeRouter";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { clinicRepository, userRepository } from "../data/postgresStore";
 import { signToken } from "../utils/jwt";
 import { requireAuth } from "../middleware/auth";
 
-const router = Router();
+const router = safeRouter();
 
 const loginSchema = z.object({
   username: z.string().min(1),

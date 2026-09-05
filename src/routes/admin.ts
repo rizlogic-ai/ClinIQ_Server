@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { safeRouter } from "../utils/safeRouter";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import {
@@ -11,7 +11,7 @@ import {
 import { requireAuth, requireRole } from "../middleware/auth";
 import { signToken } from "../utils/jwt";
 
-const router = Router();
+const router = safeRouter();
 
 const loginSchema = z.object({
   username: z.string().min(1),

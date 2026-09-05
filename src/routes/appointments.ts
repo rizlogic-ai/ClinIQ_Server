@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { safeRouter } from "../utils/safeRouter";
 import { v4 as uuid } from "uuid";
 import { z } from "zod";
 import {
@@ -8,6 +8,7 @@ import {
   userRepository,
 } from "../data/postgresStore";
 import { requireAuth, requireRole } from "../middleware/auth";
+import { dateField, timeField } from "../utils/datetime";
 import { Appointment, AppointmentHistoryEntry } from "../models/types";
 import {
   appointmentCancelledToPatient,
@@ -16,7 +17,7 @@ import {
   appointmentRescheduledToPatient,
 } from "../services/notifications";
 
-const router = Router();
+const router = safeRouter();
 router.use(requireAuth);
 
 function historyEntry(actorId: string, action: string, detail?: string): AppointmentHistoryEntry {
@@ -34,8 +35,8 @@ const createAppointmentSchema = z.object({
     })
     .optional(),
   reason: z.string().min(1),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  time: z.string().regex(/^\d{2}:\d{2}$/),
+  date: dateField,
+  time: timeField,
 });
 
 router.get("/", async (req, res) => {
@@ -180,8 +181,8 @@ router.patch("/:id/reject", requireRole("doctor"), async (req, res) => {
 });
 
 const rescheduleSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  time: z.string().regex(/^\d{2}:\d{2}$/),
+  date: dateField,
+  time: timeField,
   note: z.string().optional(),
 });
 

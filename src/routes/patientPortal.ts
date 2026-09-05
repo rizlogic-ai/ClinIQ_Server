@@ -1,15 +1,16 @@
-import { Router } from "express";
+import { safeRouter } from "../utils/safeRouter";
 import { randomUUID, randomInt, createHash } from "crypto";
 import { z } from "zod";
 import { pool } from "../db/pool";
 import { signToken } from "../utils/jwt";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { normalizePhone } from "../utils/phone";
+import { dateField, timeField } from "../utils/datetime";
 import { sendMessage } from "../services/messaging";
 import { appointmentRepository, clinicRepository, userRepository } from "../data/postgresStore";
 import { appointmentRequestedToPatient } from "../services/notifications";
 
-const router = Router();
+const router = safeRouter();
 
 const OTP_TTL_MINUTES = 10;
 const MAX_ATTEMPTS = 5;
@@ -186,8 +187,8 @@ const guestBookSchema = z.object({
   phone: z.string().min(4),
   doctorId: z.string().uuid(),
   reason: z.string().trim().min(1),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  time: z.string().regex(/^\d{2}:\d{2}$/),
+  date: dateField,
+  time: timeField,
 });
 
 const GUEST_DAILY_LIMIT = 3;
@@ -298,8 +299,8 @@ router.get("/appointments", async (req, res) => {
 const bookSchema = z.object({
   doctorId: z.string().uuid(),
   reason: z.string().trim().min(1),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  time: z.string().regex(/^\d{2}:\d{2}$/),
+  date: dateField,
+  time: timeField,
 });
 
 router.post("/appointments", async (req, res) => {

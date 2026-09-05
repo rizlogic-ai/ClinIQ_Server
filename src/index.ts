@@ -32,9 +32,24 @@ app.use((_req, res) => {
   res.status(404).json({ error: "Not found" });
 });
 
+// Last line of defence. Without this an unexpected error (a bad value reaching
+// Postgres, say) escapes as an unhandled rejection and takes the process down.
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("Unhandled route error:", err);
+  if (res.headersSent) return;
+  res.status(500).json({ error: "Something went wrong. Please try again." });
+});
+
+// A rejection that still escapes should be logged, never fatal.
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err);
+});
+
 seedDemoData().then(() => {
   app.listen(PORT, () => {
-    console.log(`Doctor-app server listening on http://localhost:${PORT}`);
-    console.log(`Demo logins -> doctor/password123, assistant/password123`);
+    console.log(`ClinIQ server listening on http://localhost:${PORT}`);
   });
 });

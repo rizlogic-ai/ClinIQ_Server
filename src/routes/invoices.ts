@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { safeRouter } from "../utils/safeRouter";
 import { v4 as uuid } from "uuid";
 import { z } from "zod";
 import {
@@ -10,7 +10,7 @@ import {
 import { requireAuth, requireRole } from "../middleware/auth";
 import { Invoice } from "../models/types";
 
-const router = Router();
+const router = safeRouter();
 router.use(requireAuth, requireRole("doctor", "assistant"));
 
 router.get("/", async (_req, res) => {
