@@ -1,5 +1,5 @@
 export type StaffRole = "doctor" | "assistant";
-export type Role = StaffRole | "admin";
+export type Role = StaffRole | "admin" | "patient";
 
 export interface User {
   id: string;
@@ -54,6 +54,8 @@ export interface Patient {
   id: string;
   name: string;
   phone: string;
+  phoneE164?: string;
+  phoneVerified?: boolean;
   email?: string;
   notes?: string;
   createdAt: string;
@@ -78,7 +80,8 @@ export interface Appointment {
   date: string; // YYYY-MM-DD
   time: string; // HH:mm
   status: AppointmentStatus;
-  createdBy: string; // assistant user id
+  createdBy: string; // assistant user id, or the patient's own id when self-booked
+  bookedByPatient?: boolean;
   createdAt: string;
   updatedAt: string;
   doctorNote?: string; // doctor's note on accept/reject/modify

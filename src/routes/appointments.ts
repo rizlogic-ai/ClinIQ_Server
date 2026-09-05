@@ -9,6 +9,12 @@ import {
 } from "../data/postgresStore";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { Appointment, AppointmentHistoryEntry } from "../models/types";
+import {
+  appointmentCancelledToPatient,
+  appointmentConfirmedToPatient,
+  appointmentRequestedToPatient,
+  appointmentRescheduledToPatient,
+} from "../services/notifications";
 
 const router = Router();
 router.use(requireAuth);
@@ -39,7 +45,9 @@ router.get("/", async (req, res) => {
     userRepository.list(),
   ]);
 
-  let visible = appointments;
+  // Default-deny: only roles with an explicit rule below see anything. A
+  // patient's own appointments come from /api/portal/appointments instead.
+  let visible: typeof appointments = [];
   if (req.user!.role === "doctor") {
     visible = appointments.filter((a) => a.doctorId === req.user!.sub);
   } else if (req.user!.role === "assistant") {
@@ -118,6 +126,7 @@ router.post("/", requireRole("assistant"), async (req, res) => {
   };
 
   await appointmentRepository.create(appointment);
+  await appointmentRequestedToPatient(appointment.id);
   res.status(201).json({ appointment });
 });
 
@@ -138,6 +147,7 @@ router.patch("/:id/accept", requireRole("doctor"), async (req, res) => {
   });
   if (!updated) return res.status(404).json({ error: "Appointment not found" });
   if (failed) return res.status(409).json({ error: "Only pending appointments can be accepted" });
+  await appointmentConfirmedToPatient(updated.id);
   res.json({ appointment: updated });
 });
 
@@ -165,6 +175,7 @@ router.patch("/:id/reject", requireRole("doctor"), async (req, res) => {
   });
   if (!updated) return res.status(404).json({ error: "Appointment not found" });
   if (failed) return res.status(409).json({ error: "Only pending appointments can be rejected" });
+  await appointmentCancelledToPatient(updated.id, parsed.data.reason);
   res.json({ appointment: updated });
 });
 
@@ -200,6 +211,7 @@ router.patch("/:id/reschedule", requireRole("doctor"), async (req, res) => {
   });
   if (!updated) return res.status(404).json({ error: "Appointment not found" });
   if (failed) return res.status(409).json({ error: "This appointment can no longer be modified" });
+  await appointmentRescheduledToPatient(updated.id);
   res.json({ appointment: updated });
 });
 
@@ -260,6 +272,7 @@ router.patch("/:id/cancel", requireRole("assistant"), async (req, res) => {
   });
   if (!updated) return res.status(404).json({ error: "Appointment not found" });
   if (failed) return res.status(409).json({ error: "This appointment can no longer be cancelled" });
+  await appointmentCancelledToPatient(updated.id);
   res.json({ appointment: updated });
 });
 

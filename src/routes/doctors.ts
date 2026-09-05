@@ -5,7 +5,7 @@ import { doctorAssistantRepository, userRepository } from "../data/postgresStore
 import { requireAuth, requireRole } from "../middleware/auth";
 
 const router = Router();
-router.use(requireAuth);
+router.use(requireAuth, requireRole("doctor", "assistant"));
 
 // Assistant: list the doctors they're assigned to (for picking one when booking)
 router.get("/", requireRole("assistant"), async (req, res) => {

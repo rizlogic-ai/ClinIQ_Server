@@ -4,7 +4,9 @@ import { patientHistoryRepository, patientRepository } from "../data/postgresSto
 import { requireAuth, requireRole } from "../middleware/auth";
 
 const router = Router();
-router.use(requireAuth);
+// Patient charts are staff-only. Patients reach their own data through
+// /api/portal, never through these clinic-wide listings.
+router.use(requireAuth, requireRole("doctor", "assistant"));
 
 const createPatientSchema = z.object({
   name: z.string().min(1),

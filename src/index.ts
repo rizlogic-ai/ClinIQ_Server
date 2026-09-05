@@ -8,6 +8,7 @@ import appointmentRoutes from "./routes/appointments";
 import invoiceRoutes from "./routes/invoices";
 import doctorRoutes from "./routes/doctors";
 import adminRoutes from "./routes/admin";
+import patientPortalRoutes from "./routes/patientPortal";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -25,6 +26,7 @@ app.use("/api/appointments", appointmentRoutes);
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/doctors", doctorRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/portal", patientPortalRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ error: "Not found" });

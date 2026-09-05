@@ -44,12 +44,33 @@ router.post("/login", async (req, res) => {
 
   res.json({
     token,
-    user: { id: user.id, name: user.name, username: user.username, role: user.role },
+    user: {
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      role: user.role,
+      clinicId: user.clinicId,
+      currency: clinic?.currency ?? "USD",
+    },
   });
 });
 
-router.get("/me", requireAuth, (req, res) => {
-  res.json({ user: req.user });
+router.get("/me", requireAuth, async (req, res) => {
+  const user = await userRepository.findById(req.user!.sub);
+  if (!user) {
+    return res.status(401).json({ error: "Account no longer exists" });
+  }
+  const clinic = await clinicRepository.findById(user.clinicId);
+  res.json({
+    user: {
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      role: user.role,
+      clinicId: user.clinicId,
+      currency: clinic?.currency ?? "USD",
+    },
+  });
 });
 
 export default router;

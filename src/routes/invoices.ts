@@ -11,7 +11,7 @@ import { requireAuth, requireRole } from "../middleware/auth";
 import { Invoice } from "../models/types";
 
 const router = Router();
-router.use(requireAuth);
+router.use(requireAuth, requireRole("doctor", "assistant"));
 
 router.get("/", async (_req, res) => {
   const [invoices, patients, appointments, users] = await Promise.all([

@@ -1,6 +1,7 @@
 import { v4 as uuid } from "uuid";
 import bcrypt from "bcryptjs";
 import { pool } from "../db/pool";
+import { normalizePhone } from "../utils/phone";
 import {
   AdminRepository,
   AppointmentRepository,
@@ -322,6 +323,8 @@ function mapPatient(row: any): Patient {
     id: row.id,
     name: row.name,
     phone: row.phone,
+    phoneE164: row.phone_e164 ?? undefined,
+    phoneVerified: row.phone_verified ?? false,
     email: row.email ?? undefined,
     notes: row.notes ?? undefined,
     createdAt: new Date(row.created_at).toISOString(),
@@ -331,10 +334,19 @@ function mapPatient(row: any): Patient {
 class PostgresPatientRepository implements PatientRepository {
   async create(patient: Omit<Patient, "id" | "createdAt">) {
     const { rows } = await pool.query(
-      `INSERT INTO cliniq.patients (id, name, phone, email, notes)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, name, phone, email, notes, created_at`,
-      [uuid(), patient.name, patient.phone, patient.email ?? null, patient.notes ?? null]
+      `INSERT INTO cliniq.patients (id, name, phone, phone_e164, email, notes)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (phone_e164) WHERE phone_e164 IS NOT NULL DO UPDATE
+         SET name = EXCLUDED.name
+       RETURNING id, name, phone, phone_e164, phone_verified, email, notes, created_at`,
+      [
+        uuid(),
+        patient.name,
+        patient.phone,
+        normalizePhone(patient.phone),
+        patient.email ?? null,
+        patient.notes ?? null,
+      ]
     );
     return mapPatient(rows[0]);
   }
@@ -413,6 +425,7 @@ const APPOINTMENT_SELECT = `
     a.rejection_reason,
     a.created_at,
     a.updated_at,
+    a.booked_by_patient,
     COALESCE((
       SELECT json_agg(json_build_object('id', s.id, 'description', s.description, 'amount', s.amount) ORDER BY s.id)
       FROM cliniq.appointment_services s WHERE s.appointment_id = a.id
@@ -434,6 +447,7 @@ function mapAppointment(row: any): Appointment {
     time: row.time,
     status: row.status,
     createdBy: row.assistant_id,
+    bookedByPatient: row.booked_by_patient ?? false,
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
     doctorNote: row.doctor_note ?? undefined,
@@ -456,13 +470,14 @@ class PostgresAppointmentRepository implements AppointmentRepository {
   async create(appt: Appointment) {
     await pool.query(
       `INSERT INTO cliniq.appointments
-         (id, patient_id, doctor_id, assistant_id, reason, appt_date, appt_time, status, doctor_note, rejection_reason, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+         (id, patient_id, doctor_id, assistant_id, reason, appt_date, appt_time, status, doctor_note, rejection_reason, created_at, updated_at, booked_by_patient)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
       [
         appt.id,
         appt.patientId,
         appt.doctorId,
-        appt.createdBy,
+        // A self-booked appointment has no assistant behind it.
+        appt.bookedByPatient ? null : appt.createdBy,
         appt.reason,
         appt.date,
         appt.time,
@@ -471,6 +486,7 @@ class PostgresAppointmentRepository implements AppointmentRepository {
         appt.rejectionReason ?? null,
         appt.createdAt,
         appt.updatedAt,
+        appt.bookedByPatient ?? false,
       ]
     );
     for (const s of appt.services) {
