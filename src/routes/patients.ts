@@ -2,6 +2,7 @@ import { safeRouter } from "../utils/safeRouter";
 import { z } from "zod";
 import { patientHistoryRepository, patientRepository } from "../data/postgresStore";
 import { requireAuth, requireRole } from "../middleware/auth";
+import { visiblePatientIds } from "../utils/scope";
 
 const router = safeRouter();
 // Patient charts are staff-only. Patients reach their own data through
@@ -15,9 +16,12 @@ const createPatientSchema = z.object({
   notes: z.string().optional(),
 });
 
-router.get("/", async (_req, res) => {
-  const patients = await patientRepository.list();
-  res.json({ patients });
+router.get("/", async (req, res) => {
+  const [patients, allowed] = await Promise.all([
+    patientRepository.list(),
+    visiblePatientIds(req.user!),
+  ]);
+  res.json({ patients: patients.filter((p) => allowed.has(p.id)) });
 });
 
 router.post("/", requireRole("assistant"), async (req, res) => {
@@ -50,6 +54,9 @@ const createHistorySchema = z.object({
 router.post("/:id/history", async (req, res) => {
   const patient = await patientRepository.findById(req.params.id);
   if (!patient) return res.status(404).json({ error: "Patient not found" });
+  if (!(await visiblePatientIds(req.user!)).has(patient.id)) {
+    return res.status(404).json({ error: "Patient not found" });
+  }
 
   const parsed = createHistorySchema.safeParse(req.body);
   if (!parsed.success) {
@@ -70,6 +77,9 @@ router.post("/:id/history", async (req, res) => {
 router.get("/:id/history", async (req, res) => {
   const patient = await patientRepository.findById(req.params.id);
   if (!patient) return res.status(404).json({ error: "Patient not found" });
+  if (!(await visiblePatientIds(req.user!)).has(patient.id)) {
+    return res.status(404).json({ error: "Patient not found" });
+  }
   const entries = await patientHistoryRepository.listByPatient(patient.id);
   res.json({ entries });
 });

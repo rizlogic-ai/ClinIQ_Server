@@ -8,23 +8,31 @@ import {
   userRepository,
 } from "../data/postgresStore";
 import { requireAuth, requireRole } from "../middleware/auth";
+import { visibleDoctorIds } from "../utils/scope";
 import { Invoice } from "../models/types";
 
 const router = safeRouter();
 router.use(requireAuth, requireRole("doctor", "assistant"));
 
-router.get("/", async (_req, res) => {
-  const [invoices, patients, appointments, users] = await Promise.all([
+router.get("/", async (req, res) => {
+  const [invoices, patients, appointments, users, allowedDoctors] = await Promise.all([
     invoiceRepository.list(),
     patientRepository.list(),
     appointmentRepository.list(),
     userRepository.list(),
+    visibleDoctorIds(req.user!),
   ]);
   const patientMap = new Map(patients.map((p) => [p.id, p]));
   const appointmentMap = new Map(appointments.map((a) => [a.id, a]));
   const userMap = new Map(users.map((u) => [u.id, u]));
 
-  const enriched = invoices.map((i) => {
+  // An invoice belongs to whichever clinic the treating doctor works in.
+  const visible = invoices.filter((i) => {
+    const appt = appointmentMap.get(i.appointmentId);
+    return appt ? allowedDoctors.has(appt.doctorId) : false;
+  });
+
+  const enriched = visible.map((i) => {
     const appointment = appointmentMap.get(i.appointmentId);
     const doctor = appointment ? userMap.get(appointment.doctorId) : undefined;
     const issuedByUser = userMap.get(i.issuedBy);
