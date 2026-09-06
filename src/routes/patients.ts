@@ -88,21 +88,25 @@ router.get("/:id/history", async (req, res) => {
 // ── Structured patient profile (standard intake) ──────────────
 // Distinct from the free-text history above: fixed fields, not prose — the
 // shape a future disease-risk model would train against.
+// Every field is nullable as well as optional: a key that's absent means
+// "leave this field as it is" (true PATCH semantics — see the handler
+// below), while a key present with null means "clear it".
 const profileSchema = z.object({
   dateOfBirth: dateField
+    .nullable()
     .optional()
     .refine((v) => !v || new Date(v).getTime() <= Date.now(), "Date of birth can't be in the future"),
-  gender: z.enum(["male", "female", "other"]).optional(),
-  bloodGroup: z.enum(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "unknown"]).optional(),
-  heightCm: z.number().min(30).max(250).optional(),
-  weightKg: z.number().min(1).max(400).optional(),
-  smoking: z.enum(["never", "former", "current"]).optional(),
-  alcohol: z.enum(["never", "occasional", "regular"]).optional(),
-  exercise: z.enum(["sedentary", "light", "active"]).optional(),
-  chronicConditions: z.array(z.string().trim().min(1)).max(30).default([]),
-  currentMedications: z.string().max(2000).optional(),
-  allergies: z.string().max(2000).optional(),
-  familyHistory: z.string().max(2000).optional(),
+  gender: z.enum(["male", "female", "other"]).nullable().optional(),
+  bloodGroup: z.enum(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "unknown"]).nullable().optional(),
+  heightCm: z.number().min(30).max(250).nullable().optional(),
+  weightKg: z.number().min(1).max(400).nullable().optional(),
+  smoking: z.enum(["never", "former", "current"]).nullable().optional(),
+  alcohol: z.enum(["never", "occasional", "regular"]).nullable().optional(),
+  exercise: z.enum(["sedentary", "light", "active"]).nullable().optional(),
+  chronicConditions: z.array(z.string().trim().min(1)).max(30).optional(),
+  currentMedications: z.string().max(2000).nullable().optional(),
+  allergies: z.string().max(2000).nullable().optional(),
+  familyHistory: z.string().max(2000).nullable().optional(),
 });
 
 router.get("/:id/profile", async (req, res) => {
@@ -125,7 +129,31 @@ router.patch("/:id/profile", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const profile = await patientProfileRepository.upsert(patient.id, req.user!.sub, parsed.data);
+
+  // A genuinely partial PATCH: a field missing from the body keeps its
+  // current value; a field present as null clears it. Without this, a
+  // caller updating just one field (say, allergies) would wipe every other
+  // field the form didn't happen to resend.
+  const body = req.body as Record<string, unknown>;
+  const existing = await patientProfileRepository.findByPatient(patient.id);
+  const data = {
+    dateOfBirth: "dateOfBirth" in body ? (parsed.data.dateOfBirth ?? undefined) : existing?.dateOfBirth,
+    gender: "gender" in body ? (parsed.data.gender ?? undefined) : existing?.gender,
+    bloodGroup: "bloodGroup" in body ? (parsed.data.bloodGroup ?? undefined) : existing?.bloodGroup,
+    heightCm: "heightCm" in body ? (parsed.data.heightCm ?? undefined) : existing?.heightCm,
+    weightKg: "weightKg" in body ? (parsed.data.weightKg ?? undefined) : existing?.weightKg,
+    smoking: "smoking" in body ? (parsed.data.smoking ?? undefined) : existing?.smoking,
+    alcohol: "alcohol" in body ? (parsed.data.alcohol ?? undefined) : existing?.alcohol,
+    exercise: "exercise" in body ? (parsed.data.exercise ?? undefined) : existing?.exercise,
+    chronicConditions: "chronicConditions" in body
+      ? parsed.data.chronicConditions ?? []
+      : existing?.chronicConditions ?? [],
+    currentMedications: "currentMedications" in body ? (parsed.data.currentMedications ?? undefined) : existing?.currentMedications,
+    allergies: "allergies" in body ? (parsed.data.allergies ?? undefined) : existing?.allergies,
+    familyHistory: "familyHistory" in body ? (parsed.data.familyHistory ?? undefined) : existing?.familyHistory,
+  };
+
+  const profile = await patientProfileRepository.upsert(patient.id, req.user!.sub, data);
   res.json({ profile });
 });
 
