@@ -1,8 +1,9 @@
 import { safeRouter } from "../utils/safeRouter";
 import { z } from "zod";
-import { patientHistoryRepository, patientRepository } from "../data/postgresStore";
+import { patientHistoryRepository, patientProfileRepository, patientRepository } from "../data/postgresStore";
 import { requireAuth, requireRole } from "../middleware/auth";
 import { visiblePatientIds } from "../utils/scope";
+import { dateField } from "../utils/datetime";
 
 const router = safeRouter();
 // Patient charts are staff-only. Patients reach their own data through
@@ -82,6 +83,50 @@ router.get("/:id/history", async (req, res) => {
   }
   const entries = await patientHistoryRepository.listByPatient(patient.id);
   res.json({ entries });
+});
+
+// ── Structured patient profile (standard intake) ──────────────
+// Distinct from the free-text history above: fixed fields, not prose — the
+// shape a future disease-risk model would train against.
+const profileSchema = z.object({
+  dateOfBirth: dateField
+    .optional()
+    .refine((v) => !v || new Date(v).getTime() <= Date.now(), "Date of birth can't be in the future"),
+  gender: z.enum(["male", "female", "other"]).optional(),
+  bloodGroup: z.enum(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "unknown"]).optional(),
+  heightCm: z.number().min(30).max(250).optional(),
+  weightKg: z.number().min(1).max(400).optional(),
+  smoking: z.enum(["never", "former", "current"]).optional(),
+  alcohol: z.enum(["never", "occasional", "regular"]).optional(),
+  exercise: z.enum(["sedentary", "light", "active"]).optional(),
+  chronicConditions: z.array(z.string().trim().min(1)).max(30).default([]),
+  currentMedications: z.string().max(2000).optional(),
+  allergies: z.string().max(2000).optional(),
+  familyHistory: z.string().max(2000).optional(),
+});
+
+router.get("/:id/profile", async (req, res) => {
+  const patient = await patientRepository.findById(req.params.id);
+  if (!patient) return res.status(404).json({ error: "Patient not found" });
+  if (!(await visiblePatientIds(req.user!)).has(patient.id)) {
+    return res.status(404).json({ error: "Patient not found" });
+  }
+  const profile = await patientProfileRepository.findByPatient(patient.id);
+  res.json({ profile: profile ?? null });
+});
+
+router.patch("/:id/profile", async (req, res) => {
+  const patient = await patientRepository.findById(req.params.id);
+  if (!patient) return res.status(404).json({ error: "Patient not found" });
+  if (!(await visiblePatientIds(req.user!)).has(patient.id)) {
+    return res.status(404).json({ error: "Patient not found" });
+  }
+  const parsed = profileSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const profile = await patientProfileRepository.upsert(patient.id, req.user!.sub, parsed.data);
+  res.json({ profile });
 });
 
 export default router;

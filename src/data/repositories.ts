@@ -5,6 +5,7 @@ import {
   Invoice,
   Patient,
   PatientHistoryEntry,
+  PatientProfile,
   StaffRole,
   Subscription,
   SubscriptionStatus,
@@ -81,6 +82,15 @@ export interface PatientRepository {
 export interface PatientHistoryRepository {
   create(entry: Omit<PatientHistoryEntry, "id" | "createdAt">): Promise<PatientHistoryEntry>;
   listByPatient(patientId: string): Promise<PatientHistoryEntry[]>;
+}
+
+export interface PatientProfileRepository {
+  findByPatient(patientId: string): Promise<PatientProfile | undefined>;
+  upsert(
+    patientId: string,
+    updatedBy: string,
+    data: Omit<PatientProfile, "patientId" | "updatedBy" | "createdAt" | "updatedAt">
+  ): Promise<PatientProfile>;
 }
 
 export interface AppointmentRepository {

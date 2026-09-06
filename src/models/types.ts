@@ -61,6 +61,34 @@ export interface Patient {
   createdAt: string;
 }
 
+export type Gender = "male" | "female" | "other";
+export type BloodGroup = "A+" | "A-" | "B+" | "B-" | "AB+" | "AB-" | "O+" | "O-" | "unknown";
+export type SmokingStatus = "never" | "former" | "current";
+export type AlcoholUse = "never" | "occasional" | "regular";
+export type ExerciseLevel = "sedentary" | "light" | "active";
+
+// Structured intake data, distinct from the free-text notes in
+// PatientHistoryEntry — this is what a future disease-risk model would
+// train against, so its shape is deliberately fixed fields, not prose.
+export interface PatientProfile {
+  patientId: string;
+  dateOfBirth?: string; // YYYY-MM-DD
+  gender?: Gender;
+  bloodGroup?: BloodGroup;
+  heightCm?: number;
+  weightKg?: number;
+  smoking?: SmokingStatus;
+  alcohol?: AlcoholUse;
+  exercise?: ExerciseLevel;
+  chronicConditions: string[];
+  currentMedications?: string;
+  allergies?: string;
+  familyHistory?: string;
+  updatedBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ServiceLine {
   id: string;
   description: string;

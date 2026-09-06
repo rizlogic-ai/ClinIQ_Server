@@ -9,6 +9,7 @@ import {
   DoctorAssistantRepository,
   InvoiceRepository,
   PatientHistoryRepository,
+  PatientProfileRepository,
   PatientRepository,
   SubscriptionRepository,
   SubscriptionTiers,
@@ -21,6 +22,7 @@ import {
   Invoice,
   Patient,
   PatientHistoryEntry,
+  PatientProfile,
   StaffRole,
   Subscription,
   SubscriptionStatus,
@@ -411,6 +413,81 @@ class PostgresPatientHistoryRepository implements PatientHistoryRepository {
   }
 }
 
+function mapPatientProfile(row: any): PatientProfile {
+  return {
+    patientId: row.patient_id,
+    dateOfBirth: row.date_of_birth ? row.date_of_birth.toISOString().slice(0, 10) : undefined,
+    gender: row.gender ?? undefined,
+    bloodGroup: row.blood_group ?? undefined,
+    heightCm: row.height_cm != null ? Number(row.height_cm) : undefined,
+    weightKg: row.weight_kg != null ? Number(row.weight_kg) : undefined,
+    smoking: row.smoking ?? undefined,
+    alcohol: row.alcohol ?? undefined,
+    exercise: row.exercise ?? undefined,
+    chronicConditions: row.chronic_conditions ?? [],
+    currentMedications: row.current_medications ?? undefined,
+    allergies: row.allergies ?? undefined,
+    familyHistory: row.family_history ?? undefined,
+    updatedBy: row.updated_by ?? undefined,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  };
+}
+
+class PostgresPatientProfileRepository implements PatientProfileRepository {
+  async findByPatient(patientId: string) {
+    const { rows } = await pool.query(`SELECT * FROM cliniq.patient_profiles WHERE patient_id = $1`, [patientId]);
+    return rows[0] ? mapPatientProfile(rows[0]) : undefined;
+  }
+
+  async upsert(
+    patientId: string,
+    updatedBy: string,
+    data: Omit<PatientProfile, "patientId" | "updatedBy" | "createdAt" | "updatedAt">
+  ) {
+    const { rows } = await pool.query(
+      `INSERT INTO cliniq.patient_profiles
+         (patient_id, date_of_birth, gender, blood_group, height_cm, weight_kg,
+          smoking, alcohol, exercise, chronic_conditions, current_medications,
+          allergies, family_history, updated_by, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, now())
+       ON CONFLICT (patient_id) DO UPDATE SET
+         date_of_birth = EXCLUDED.date_of_birth,
+         gender = EXCLUDED.gender,
+         blood_group = EXCLUDED.blood_group,
+         height_cm = EXCLUDED.height_cm,
+         weight_kg = EXCLUDED.weight_kg,
+         smoking = EXCLUDED.smoking,
+         alcohol = EXCLUDED.alcohol,
+         exercise = EXCLUDED.exercise,
+         chronic_conditions = EXCLUDED.chronic_conditions,
+         current_medications = EXCLUDED.current_medications,
+         allergies = EXCLUDED.allergies,
+         family_history = EXCLUDED.family_history,
+         updated_by = EXCLUDED.updated_by,
+         updated_at = now()
+       RETURNING *`,
+      [
+        patientId,
+        data.dateOfBirth ?? null,
+        data.gender ?? null,
+        data.bloodGroup ?? null,
+        data.heightCm ?? null,
+        data.weightKg ?? null,
+        data.smoking ?? null,
+        data.alcohol ?? null,
+        data.exercise ?? null,
+        data.chronicConditions ?? [],
+        data.currentMedications ?? null,
+        data.allergies ?? null,
+        data.familyHistory ?? null,
+        updatedBy,
+      ]
+    );
+    return mapPatientProfile(rows[0]);
+  }
+}
+
 const APPOINTMENT_SELECT = `
   SELECT
     a.id,
@@ -654,6 +731,7 @@ export const subscriptionRepository = new PostgresSubscriptionRepository();
 export const doctorAssistantRepository = new PostgresDoctorAssistantRepository();
 export const patientRepository = new PostgresPatientRepository();
 export const patientHistoryRepository = new PostgresPatientHistoryRepository();
+export const patientProfileRepository = new PostgresPatientProfileRepository();
 export const appointmentRepository = new PostgresAppointmentRepository();
 export const invoiceRepository = new PostgresInvoiceRepository();
 
