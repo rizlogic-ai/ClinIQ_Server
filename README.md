@@ -15,6 +15,12 @@ Health check: `GET /api/health`
 | [ClinIQ_Web](https://github.com/rizlogic-ai/ClinIQ_Web) | React web app — staff, admin, and patient portal. Live at `cliniq.rizlogic.com`. |
 | [ClinIQ_Mobile](https://github.com/rizlogic-ai/ClinIQ_Mobile) | Flutter app, doctors only. |
 
+All three repos live side by side inside one local `Doctor-app/` folder
+(`server/`, `client/`, `mobile/`) on the maintainer's machine, but that
+parent folder is **not itself a git repo** — each subfolder is an
+independent repo with its own GitHub remote. `cd` into the right one
+before running `git` commands.
+
 ## Architecture
 
 - **Database**: a dedicated `cliniq` Postgres schema on a shared instance
